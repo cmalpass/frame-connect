@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: frameo-sync
+    ports:
+      - "3000:3000"
+    privileged: true
+    environment:
+      - NODE_ENV=production
+      - DATABASE_PATH=/app/data/frameo.db
+      - PHOTOS_PATH=/app/photos
+      # For macOS: Point to host.docker.internal to reach host's ADB
+      - ADB_HOST=host.docker.internal
+      - ADB_PORT=5037
+    volumes:
+      - ./data:/app/data
+      - ./photos:/app/photos
+      # USB device access (Linux only)
+      - /dev/bus/usb:/dev/bus/usb
+    networks:
+      - frameo-network
+    restart: unless-stopped
+
+networks:
+  frameo-network:
+    driver: bridge
