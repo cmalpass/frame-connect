@@ -371,6 +371,23 @@ function DevicesPage() {
                 >
                   🔄 Scan
                 </button>
+                <button
+                  className="btn btn-warning btn-sm"
+                  title="Restart Frameo app on device"
+                  style={{ marginLeft: 4 }}
+                  onClick={async () => {
+                    if (confirm('Restart Frameo app? Use this if photos are syncing but not showing.')) {
+                      try {
+                        await deviceApi.restartApp(device.id);
+                        alert('✅ App restart commanded');
+                      } catch (e) {
+                        alert('❌ Failed: ' + (e as Error).message);
+                      }
+                    }
+                  }}
+                >
+                  ⚡ Restart
+                </button>
                 <button className="btn btn-secondary btn-sm" onClick={() => handleViewPhotos(device)}>📷 Photos</button>
                 <button className="btn btn-danger btn-sm" onClick={() => handleDelete(device.id)}>🗑️</button>
               </div>

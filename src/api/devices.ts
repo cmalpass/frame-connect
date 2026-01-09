@@ -166,6 +166,22 @@ router.post('/:id/refresh', async (req: Request, res: Response) => {
     }
 });
 
+// Restart Frameo app
+router.post('/:id/restart-app', async (req: Request, res: Response) => {
+    try {
+        const device = deviceManager.getDevice(req.params.id);
+        if (!device) {
+            return res.status(404).json({ error: 'Device not found' });
+        }
+
+        await adbService.restartApp(device.serial);
+        res.json({ success: true, message: 'Frameo app restarted' });
+    } catch (err) {
+        logger.error({ error: err }, 'Failed to restart Frameo app');
+        res.status(500).json({ error: 'Failed to restart Frameo app' });
+    }
+});
+
 import sharp from 'sharp';
 
 // Serve a specific photo from device with thumbnail support

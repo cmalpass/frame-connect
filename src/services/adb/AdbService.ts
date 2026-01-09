@@ -352,8 +352,51 @@ export class AdbService {
                 };
             }
             return null;
+            return null;
         } catch {
             return null;
+        }
+    }
+
+    /**
+     * Find the Frameo package name on the device
+     */
+    async findFrameoPackage(serial: string): Promise<string> {
+        try {
+            const output = await this.shell(serial, 'pm list packages | grep frameo');
+            // output format: package:net.frameo.app
+            const match = output.match(/package:(.*frameo.*)/);
+            if (match && match[1]) {
+                return match[1].trim();
+            }
+            return 'net.frameo.app'; // Default
+        } catch (err) {
+            logger.warn({ serial, error: err }, 'Failed to find frameo package, using default');
+            return 'net.frameo.app';
+        }
+    }
+
+    /**
+     * Restart the Frameo application
+     */
+    async restartApp(serial: string): Promise<boolean> {
+        const packageName = await this.findFrameoPackage(serial);
+        logger.info({ serial, packageName }, 'Restarting Frameo app');
+
+        try {
+            // Force stop
+            await this.shell(serial, `am force-stop ${packageName}`);
+
+            // Wait a moment
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            // Start app - using monkey is a reliable way to launch the main intent without knowing activity name
+            await this.shell(serial, `monkey -p ${packageName} -c android.intent.category.LAUNCHER 1`);
+
+            return true;
+        } catch (err) {
+            logger.error({ serial, packageName, error: err }, 'Failed to restart Frameo app');
+            throw err;
         }
     }
 }
