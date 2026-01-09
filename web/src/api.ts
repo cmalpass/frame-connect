@@ -130,8 +130,13 @@ export const syncApi = {
     }),
     deleteMapping: (id: string) => request<void>(`/sync/mappings/${id}`, { method: 'DELETE' }),
     triggerSync: (id: string) => request<{ result: unknown }>(`/sync/mappings/${id}/sync`, { method: 'POST' }),
-    getLogs: (mappingId?: string, limit?: number) =>
-        request<{ logs: SyncLog[] }>(`/sync/logs${mappingId ? `?mappingId=${mappingId}` : ''}${limit ? `&limit=${limit}` : ''}`),
+    getLogs: (mappingId?: string, limit?: number) => {
+        const params = new URLSearchParams();
+        if (mappingId) params.append('mappingId', mappingId);
+        if (limit) params.append('limit', limit.toString());
+        const query = params.toString() ? `?${params.toString()}` : '';
+        return request<{ logs: SyncLog[] }>(`/sync/logs${query}`);
+    },
     getSchedule: () => request<{ tasks: { mappingId: string; schedule: string }[] }>('/sync/schedule'),
 };
 
