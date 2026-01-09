@@ -378,8 +378,8 @@ function DevicesPage() {
                   onClick={async () => {
                     if (confirm('Restart Frameo app? Use this if photos are syncing but not showing.')) {
                       try {
-                        await deviceApi.restartApp(device.id);
-                        alert('✅ App restart commanded');
+                        const res = await deviceApi.restartApp(device.id);
+                        alert('✅ ' + res.message);
                       } catch (e) {
                         alert('❌ Failed: ' + (e as Error).message);
                       }

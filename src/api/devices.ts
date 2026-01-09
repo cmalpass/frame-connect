@@ -174,8 +174,14 @@ router.post('/:id/restart-app', async (req: Request, res: Response) => {
             return res.status(404).json({ error: 'Device not found' });
         }
 
+        const packageName = await adbService.findFrameoPackage(device.serial);
         await adbService.restartApp(device.serial);
-        res.json({ success: true, message: 'Frameo app restarted' });
+
+        res.json({
+            success: true,
+            message: `Restarted app: ${packageName}`,
+            packageName
+        });
     } catch (err) {
         logger.error({ error: err }, 'Failed to restart Frameo app');
         res.status(500).json({ error: 'Failed to restart Frameo app' });

@@ -363,15 +363,24 @@ export class AdbService {
      */
     async findFrameoPackage(serial: string): Promise<string> {
         try {
-            const output = await this.shell(serial, 'pm list packages | grep frameo');
-            // output format: package:net.frameo.app
-            const match = output.match(/package:(.*frameo.*)/);
-            if (match && match[1]) {
-                return match[1].trim();
+            // List all packages and filter in JS to avoid grep issues
+            const output = await this.shell(serial, 'pm list packages');
+            const packages = output.split(/[\r\n]+/);
+
+            // Look for frameo packages
+            const frameoPkg = packages
+                .map(line => line.replace('package:', '').trim())
+                .find(pkg => pkg.toLowerCase().includes('frameo'));
+
+            if (frameoPkg) {
+                logger.info({ serial, found: frameoPkg }, 'Found Frameo package');
+                return frameoPkg;
             }
-            return 'net.frameo.app'; // Default
+
+            logger.warn({ serial }, 'No package with "frameo" found, using default');
+            return 'net.frameo.app';
         } catch (err) {
-            logger.warn({ serial, error: err }, 'Failed to find frameo package, using default');
+            logger.warn({ serial, error: err }, 'Failed to list packages, using default');
             return 'net.frameo.app';
         }
     }
