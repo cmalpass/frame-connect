@@ -388,6 +388,31 @@ function DevicesPage() {
                 >
                   ⚡ Restart
                 </button>
+                <button
+                  className="btn btn-info btn-sm"
+                  title="Switch between Direct and Manual Import modes"
+                  style={{ marginLeft: 4 }}
+                  onClick={async () => {
+                    const isImportMode = device.devicePath.includes('/Download/');
+                    const newPath = isImportMode ? '/sdcard/DCIM/Frameo' : '/sdcard/Download/FrameoImports';
+                    const msg = isImportMode
+                      ? 'Switch back to Direct Mode? (Files go to /DCIM/Frameo - might not show without reboot)'
+                      : 'Switch to Manual Import Mode? (Files go to /Download/FrameoImports - easier to Import from Frameo Settings)';
+
+                    if (confirm(msg)) {
+                      try {
+                        await deviceApi.update(device.id, { devicePath: newPath });
+                        alert(`✅ Switched to ${isImportMode ? 'Direct' : 'Import'} Mode.\n\nPath updated to: ${newPath}`);
+                        // Reload devices
+                        loadDevices();
+                      } catch (e) {
+                        alert('❌ Failed: ' + (e as Error).message);
+                      }
+                    }
+                  }}
+                >
+                  {device.devicePath.includes('/Download/') ? '📁 Direct' : '📥 Import Mode'}
+                </button>
                 <button className="btn btn-secondary btn-sm" onClick={() => handleViewPhotos(device)}>📷 Photos</button>
                 <button className="btn btn-danger btn-sm" onClick={() => handleDelete(device.id)}>🗑️</button>
               </div>
