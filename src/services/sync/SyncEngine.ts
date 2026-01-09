@@ -288,6 +288,49 @@ export class SyncEngine {
         return result.changes > 0;
     }
 
+    updateMapping(id: string, updates: Partial<Pick<SyncMapping, 'schedule' | 'maxPhotos' | 'syncMode' | 'isActive'>>): SyncMapping | null {
+        const current = this.getMapping(id);
+        if (!current) return null;
+
+        const now = new Date().toISOString();
+        const setClauses: string[] = [];
+        const params: any[] = [];
+
+        if (updates.schedule !== undefined) {
+            setClauses.push('schedule = ?');
+            params.push(updates.schedule);
+        }
+        if (updates.maxPhotos !== undefined) {
+            setClauses.push('max_photos = ?');
+            params.push(updates.maxPhotos);
+        }
+        if (updates.syncMode !== undefined) {
+            setClauses.push('sync_mode = ?');
+            params.push(updates.syncMode);
+        }
+        if (updates.isActive !== undefined) {
+            setClauses.push('is_active = ?');
+            params.push(updates.isActive ? 1 : 0);
+        }
+
+        if (setClauses.length === 0) return current;
+
+        setClauses.push('updated_at = ?');
+        params.push(now);
+        params.push(id);
+
+        const stmt = db.prepare(`
+            UPDATE sync_mappings 
+            SET ${setClauses.join(', ')}
+            WHERE id = ?
+        `);
+
+        stmt.run(...params);
+        logger.info({ id, updates }, 'Sync mapping updated');
+
+        return this.getMapping(id);
+    }
+
     // Synced photo tracking
     private getSyncedPhotos(mappingId: string): SyncedPhoto[] {
         const stmt = db.prepare(`SELECT * FROM synced_photos WHERE mapping_id = ?`);

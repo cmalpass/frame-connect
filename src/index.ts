@@ -1,5 +1,7 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, mkdirSync } from 'fs';
@@ -8,6 +10,7 @@ import { initializeDatabase } from './database/index.js';
 import { logger } from './utils/logger.js';
 import { syncScheduler } from './services/sync/index.js';
 import apiRouter from './api/index.js';
+import { errorHandler, notFoundHandler, requestIdMiddleware, requestTimeout } from './middleware/index.js';
 
 // Import sources to register factories
 import './services/sources/LocalFolderSource.js';
@@ -35,22 +38,47 @@ async function main() {
   // Create Express app
   const app = express();
 
-  // ... imports ...
+  // Security middleware
+  app.use(helmet({
+    contentSecurityPolicy: false, // Disabled for SPA compatibility
+    crossOriginEmbedderPolicy: false,
+  }));
+
+  // Rate limiting for API routes
+  const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 1000, // Limit each IP to 1000 requests per window
+    message: { error: 'Too many requests, please try again later' },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  // Request ID tracking
+  app.use(requestIdMiddleware);
+
+  // Request timeout (30 seconds for most routes)
+  app.use(requestTimeout(30000));
 
   // Middleware
   app.use(cors());
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  app.use(express.json({ limit: '10mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(fileUpload({
     useTempFiles: true,
-    tempFileDir: '/tmp/'
+    tempFileDir: '/tmp/',
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max file size
+    abortOnLimit: true,
   }));
 
-  // Request logging
+  // Request logging with request ID
   app.use((req, res, next) => {
-    logger.debug({ method: req.method, path: req.path }, 'Request');
+    const requestId = req.headers['x-request-id'];
+    logger.debug({ requestId, method: req.method, path: req.path }, 'Request');
     next();
   });
+
+  // Apply rate limiting to API routes
+  app.use('/api', apiLimiter);
 
   // API routes
   app.use('/api', apiRouter);
@@ -59,10 +87,12 @@ async function main() {
   const webDir = join(__dirname, '..', 'web', 'dist');
   if (existsSync(webDir)) {
     app.use(express.static(webDir));
-    app.get('*', (req, res) => {
-      if (!req.path.startsWith('/api')) {
-        res.sendFile(join(webDir, 'index.html'));
+    // SPA fallback - serve index.html for non-API routes
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api')) {
+        return next(); // Let 404 handler deal with unmatched API routes
       }
+      res.sendFile(join(webDir, 'index.html'));
     });
   } else {
     // Serve a simple status page if no web UI is built
@@ -186,11 +216,12 @@ async function main() {
     });
   }
 
-  // Error handling
-  app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
-    logger.error({ error: err, path: req.path }, 'Unhandled error');
-    res.status(500).json({ error: 'Internal server error' });
-  });
+
+  // 404 handler for unmatched routes
+  app.use(notFoundHandler);
+
+  // Global error handling
+  app.use(errorHandler);
 
   // Start server
   app.listen(config.PORT, () => {

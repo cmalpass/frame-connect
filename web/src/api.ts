@@ -92,6 +92,10 @@ export const deviceApi = {
     delete: (id: string) => request<void>(`/devices/${id}`, { method: 'DELETE' }),
     connect: (id: string) => request<{ success: boolean }>(`/devices/${id}/connect`, { method: 'POST' }),
     listPhotos: (id: string) => request<{ photos: string[]; count: number }>(`/devices/${id}/photos`),
+    deletePhotos: (id: string, photos: string[]) => request<{ success: boolean; deleted: string[]; failed: string[] }>(`/devices/${id}/photos`, {
+        method: 'DELETE',
+        body: JSON.stringify({ photos }),
+    }),
 };
 
 // Source API

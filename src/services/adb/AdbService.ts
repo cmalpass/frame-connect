@@ -235,6 +235,18 @@ export class AdbService {
     }
 
     /**
+     * Broadcast MEDIA_SCANNER_SCAN_FILE intent to update gallery
+     */
+    async broadcastMediaScan(serial: string, devicePath: string): Promise<void> {
+        try {
+            await this.shell(serial, `am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://${devicePath}"`);
+            logger.debug({ serial, devicePath }, 'Media scan broadcasted');
+        } catch (err) {
+            logger.warn({ serial, devicePath, error: err }, 'Failed to broadcast media scan');
+        }
+    }
+
+    /**
      * List files in a directory on the device
      */
     async listFiles(serial: string, devicePath: string): Promise<string[]> {

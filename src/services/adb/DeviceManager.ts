@@ -73,6 +73,12 @@ export class DeviceManager {
         const id = generateId();
         const now = new Date().toISOString();
 
+        // Auto-detect Frameo device path if not specified
+        let devicePath = input.devicePath;
+        if (!devicePath) {
+            devicePath = await this.detectFrameoPath(input.serial);
+        }
+
         const stmt = db.prepare(`
       INSERT INTO devices (id, name, serial, connection_type, network_address, network_port, device_path, is_active, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
@@ -85,13 +91,40 @@ export class DeviceManager {
             input.connectionType,
             input.networkAddress ?? null,
             input.networkPort ?? 5555,
-            input.devicePath ?? '/sdcard/DCIM/FrameoSync',
+            devicePath,
             now,
             now
         );
 
-        logger.info({ id, name: input.name, serial: input.serial }, 'Device registered');
+        logger.info({ id, name: input.name, serial: input.serial, devicePath }, 'Device registered');
         return this.getDevice(id)!;
+    }
+
+    /**
+     * Auto-detect the Frameo media path on a device
+     * Checks common Frameo paths and returns the first one that exists
+     */
+    private async detectFrameoPath(serial: string): Promise<string> {
+        const possiblePaths = [
+            '/sdcard/frameo_files/media',  // Standard Frameo path
+            '/sdcard/DCIM/Frameo',          // Some devices use this
+            '/sdcard/Frameo',               // Alternative location
+        ];
+
+        for (const path of possiblePaths) {
+            try {
+                const files = await adbService.listFiles(serial, path);
+                // If we can list files (even empty), path exists
+                logger.debug({ serial, path, fileCount: files.length }, 'Detected Frameo path');
+                return path;
+            } catch {
+                // Path doesn't exist, try next
+            }
+        }
+
+        // Fallback to standard Frameo path
+        logger.warn({ serial }, 'Could not detect Frameo path, using default');
+        return '/sdcard/frameo_files/media';
     }
 
     /**

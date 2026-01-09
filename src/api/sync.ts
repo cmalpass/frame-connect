@@ -1,6 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { syncEngine, syncScheduler } from '../services/sync/index.js';
 import { logger } from '../utils/logger.js';
+import { validateBody, asyncHandler } from '../middleware/index.js';
+import { createMappingSchema, updateMappingSchema, syncLogsQuerySchema } from './schemas.js';
+import { NotFoundError } from '../utils/errors.js';
 
 const router = Router();
 
@@ -55,6 +58,36 @@ router.post('/mappings', (req: Request, res: Response) => {
     } catch (err) {
         logger.error({ error: err }, 'Failed to create mapping');
         res.status(500).json({ error: 'Failed to create mapping' });
+    }
+});
+
+// Update a sync mapping
+router.put('/mappings/:id', (req: Request, res: Response) => {
+    try {
+        const { schedule, maxPhotos, syncMode, isActive } = req.body;
+
+        const updated = syncEngine.updateMapping(req.params.id, {
+            schedule,
+            maxPhotos,
+            syncMode,
+            isActive
+        });
+
+        if (!updated) {
+            return res.status(404).json({ error: 'Mapping not found' });
+        }
+
+        // Update scheduler
+        if (updated.schedule && updated.isActive) {
+            syncScheduler.scheduleMapping(updated);
+        } else {
+            syncScheduler.unscheduleMapping(updated.id);
+        }
+
+        res.json({ mapping: updated });
+    } catch (err) {
+        logger.error({ error: err }, 'Failed to update mapping');
+        res.status(500).json({ error: 'Failed to update mapping' });
     }
 });
 

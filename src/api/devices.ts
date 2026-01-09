@@ -1,6 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { deviceManager, adbService } from '../services/adb/index.js';
 import { logger } from '../utils/logger.js';
+import { validateBody, sanitizeFilenameParam, asyncHandler } from '../middleware/index.js';
+import { createDeviceSchema, updateDeviceSchema, deletePhotosSchema } from './schemas.js';
+import { NotFoundError, ValidationError } from '../utils/errors.js';
 
 const router = Router();
 
@@ -140,7 +143,7 @@ router.post('/:id/connect', async (req: Request, res: Response) => {
 import sharp from 'sharp';
 
 // Serve a specific photo from device with thumbnail support
-router.get('/:id/photos/:filename', async (req: Request, res: Response) => {
+router.get('/:id/photos/:filename', sanitizeFilenameParam('filename'), async (req: Request, res: Response) => {
     try {
         const device = deviceManager.getDevice(req.params.id);
         if (!device) {
@@ -288,20 +291,61 @@ router.post('/:id/photos', async (req: Request, res: Response) => {
         // Push file
         await adbService.pushFile(device.serial, tempPath, devicePath);
 
-        // Broadcast media scan to ensure Frameo detects it immediately
-        try {
-            await adbService.shell(
-                device.serial,
-                `am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file://${devicePath}`
-            );
-        } catch (e) {
-            logger.warn({ error: e }, 'Failed to broadcast media scan, but file was pushed');
-        }
+        // Broadcast media scan
+        await adbService.broadcastMediaScan(device.serial, devicePath);
 
         res.status(201).json({ success: true, filename });
     } catch (err) {
         logger.error({ error: err }, 'Failed to upload photo');
         res.status(500).json({ error: 'Failed to upload photo' });
+    }
+});
+
+// Delete photos from the device
+router.delete('/:id/photos', async (req: Request, res: Response) => {
+    try {
+        const device = deviceManager.getDevice(req.params.id);
+        if (!device) {
+            return res.status(404).json({ error: 'Device not found' });
+        }
+
+        const { photos } = req.body;
+        if (!Array.isArray(photos) || photos.length === 0) {
+            return res.status(400).json({ error: 'No photos specified for deletion' });
+        }
+
+        const fs = await import('fs/promises');
+        const cacheDir = `/tmp/frameo-cache/${device.id}`;
+        const deleted: string[] = [];
+        const failed: string[] = [];
+
+        for (const filename of photos) {
+            const devicePath = `${device.devicePath}/${filename}`;
+
+            // Delete from device
+            const success = await adbService.deleteFile(device.serial, devicePath);
+
+            if (success) {
+                deleted.push(filename);
+                // Broadcast scan to remove from gallery
+                await adbService.broadcastMediaScan(device.serial, devicePath);
+
+                // Clean up local cache/thumbnails
+                const localPath = `${cacheDir}/${filename}`;
+                const thumbPath = `${localPath}.thumb.webp`;
+
+                await fs.unlink(localPath).catch(() => { });
+                await fs.unlink(thumbPath).catch(() => { });
+            } else {
+                failed.push(filename);
+            }
+        }
+
+        logger.info({ deviceId: device.id, deletedCount: deleted.length, failedCount: failed.length }, 'Deleted photos');
+        res.json({ success: true, deleted, failed });
+    } catch (err) {
+        logger.error({ error: err }, 'Failed to delete photos');
+        res.status(500).json({ error: 'Failed to delete photos' });
     }
 });
 

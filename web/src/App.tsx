@@ -293,10 +293,14 @@ function DevicesPage() {
     }
   };
 
-  const handleViewPhotos = async (device: Device) => {
-    setSelectedDevice(device);
+  const fetchPhotos = async (device: Device) => {
     const res = await deviceApi.listPhotos(device.id);
     setPhotos(res.photos);
+  };
+
+  const handleViewPhotos = async (device: Device) => {
+    setSelectedDevice(device);
+    await fetchPhotos(device);
   };
 
   const handleDelete = async (id: string) => {
@@ -429,6 +433,7 @@ function DevicesPage() {
           device={selectedDevice}
           photos={photos}
           onClose={() => { setSelectedDevice(null); setPhotos([]); }}
+          onRefresh={() => fetchPhotos(selectedDevice)}
         />
       )}
     </>
@@ -577,7 +582,7 @@ function SyncPage() {
   const [sources, setSources] = useState<Source[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newMapping, setNewMapping] = useState({ sourceId: '', deviceId: '', syncMode: 'add_only' });
+  const [newMapping, setNewMapping] = useState({ sourceId: '', deviceId: '', syncMode: 'add_only', schedule: '' });
   const [syncing, setSyncing] = useState<string | null>(null);
 
   const loadData = async () => {
@@ -599,9 +604,10 @@ function SyncPage() {
       sourceId: newMapping.sourceId,
       deviceId: newMapping.deviceId,
       syncMode: newMapping.syncMode as 'mirror' | 'add_only',
+      schedule: newMapping.schedule || undefined,
     });
     setShowAddModal(false);
-    setNewMapping({ sourceId: '', deviceId: '', syncMode: 'add_only' });
+    setNewMapping({ sourceId: '', deviceId: '', syncMode: 'add_only', schedule: '' });
     loadData();
   };
 
@@ -673,7 +679,11 @@ function SyncPage() {
               </div>
               {mapping.schedule && (
                 <div className="item-card-meta">
-                  <span>⏰ {mapping.schedule}</span>
+                  <span>⏰ {mapping.schedule === '0 * * * *' ? 'Hourly' :
+                    mapping.schedule === '0 */6 * * *' ? 'Every 6 Hours' :
+                      mapping.schedule === '0 0 * * *' ? 'Daily' :
+                        mapping.schedule === '0 0 * * 0' ? 'Weekly' :
+                          mapping.schedule}</span>
                 </div>
               )}
               <div className="item-card-actions">
@@ -724,6 +734,20 @@ function SyncPage() {
             >
               <option value="add_only">Add Only (keep existing photos)</option>
               <option value="mirror">Mirror (remove deleted photos)</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Schedule</label>
+            <select
+              className="form-select"
+              value={newMapping.schedule}
+              onChange={e => setNewMapping({ ...newMapping, schedule: e.target.value })}
+            >
+              <option value="">Manual (No automatic sync)</option>
+              <option value="0 * * * *">Every Hour</option>
+              <option value="0 */6 * * *">Every 6 Hours</option>
+              <option value="0 0 * * *">Daily</option>
+              <option value="0 0 * * 0">Weekly</option>
             </select>
           </div>
           <div className="modal-footer" style={{ padding: 0, marginTop: 16, border: 'none' }}>
@@ -784,10 +808,13 @@ function LogsPage() {
   );
 }
 
-function PhotoGallery({ device, photos, onClose }: { device: Device; photos: string[]; onClose: () => void }) {
+function PhotoGallery({ device, photos, onClose, onRefresh }: { device: Device; photos: string[]; onClose: () => void; onRefresh: () => void }) {
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
   const [loadedImages, setLoadedImages] = useState<Set<string>>(new Set());
   const [uploading, setUploading] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
 
   const getPhotoUrl = (filename: string, thumbnail = false) =>
     `/api/devices/${device.id}/photos/${encodeURIComponent(filename)}${thumbnail ? '?thumbnail=true' : ''}`;
@@ -805,13 +832,42 @@ function PhotoGallery({ device, photos, onClose }: { device: Device; photos: str
         method: 'POST',
         body: formData,
       });
-      // Simple refresh hack: close and reopen or user must reopen
-      alert('Photo uploaded! Re-opening photos to refresh.');
-      onClose();
+      alert('Photo uploaded!');
+      onRefresh();
     } catch (err) {
       alert('Failed to upload photo');
     } finally {
       setUploading(false);
+    }
+  };
+
+  const toggleSelection = (photo: string) => {
+    const newSet = new Set(selectedItems);
+    if (newSet.has(photo)) {
+      newSet.delete(photo);
+    } else {
+      newSet.add(photo);
+    }
+    setSelectedItems(newSet);
+  };
+
+  const handleDeleteSelected = async () => {
+    if (!confirm(`Are you sure you want to delete ${selectedItems.size} photo(s)? This cannot be undone.`)) return;
+
+    setDeleting(true);
+    try {
+      const result = await deviceApi.deletePhotos(device.id, Array.from(selectedItems));
+      if (result.success) {
+        setSelectedItems(new Set());
+        setSelectionMode(false);
+        onRefresh();
+      } else {
+        alert('Some photos failed to delete');
+      }
+    } catch (e) {
+      alert('Failed to delete photos: ' + (e as Error).message);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -834,42 +890,83 @@ function PhotoGallery({ device, photos, onClose }: { device: Device; photos: str
   return (
     <>
       <div className="modal-overlay" onClick={onClose}>
-        <div className="modal" style={{ maxWidth: '900px', width: '95%' }} onClick={e => e.stopPropagation()}>
+        <div className="modal" style={{ maxWidth: '900px', width: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
           <div className="modal-header">
-            <h3>Photos on {device.name}</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <h3>Photos on {device.name}</h3>
+              <span className="badge badge-info">{photos.length}</span>
+            </div>
             <div style={{ display: 'flex', gap: 12 }}>
-              <label className="btn btn-primary btn-sm" style={{ cursor: uploading ? 'wait' : 'pointer' }}>
-                {uploading ? 'Uploading...' : '⬆️ Upload Photo'}
-                <input
-                  type="file"
-                  accept="image/*"
-                  style={{ display: 'none' }}
-                  onChange={handleUpload}
-                  disabled={uploading}
-                />
-              </label>
+              {selectionMode ? (
+                <>
+                  <button
+                    className="btn btn-danger btn-sm"
+                    disabled={selectedItems.size === 0 || deleting}
+                    onClick={handleDeleteSelected}
+                  >
+                    {deleting ? 'Deleting...' : `🗑️ Delete (${selectedItems.size})`}
+                  </button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => { setSelectionMode(false); setSelectedItems(new Set()); }}>
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setSelectionMode(true)} disabled={photos.length === 0}>
+                    ☑️ Select
+                  </button>
+                  <label className="btn btn-primary btn-sm" style={{ cursor: uploading ? 'wait' : 'pointer' }}>
+                    {uploading ? 'Uploading...' : '⬆️ Upload'}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      style={{ display: 'none' }}
+                      onChange={handleUpload}
+                      disabled={uploading}
+                    />
+                  </label>
+                </>
+              )}
               <button className="btn btn-secondary btn-sm" onClick={onClose}>✕</button>
             </div>
           </div>
-          <div className="modal-body">
+          <div className="modal-body" style={{ overflowY: 'auto' }}>
             {photos.length === 0 ? (
               <p>No photos found on this device.</p>
             ) : (
-              <>
-                <p style={{ marginBottom: 16 }}>{photos.length} photos on device</p>
-                <div className="photo-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
-                  {photos.map((photo, i) => (
+              <div className="photo-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
+                {photos.map((photo, i) => {
+                  const isSelected = selectedItems.has(photo);
+                  return (
                     <div
                       key={i}
                       className="photo-item"
-                      style={{ cursor: 'pointer', position: 'relative', overflow: 'hidden' }}
-                      onClick={() => setSelectedPhoto(photo)}
+                      style={{
+                        cursor: 'pointer',
+                        position: 'relative',
+                        overflow: 'hidden',
+                        outline: isSelected ? '3px solid var(--primary)' : 'none',
+                        opacity: selectionMode && !isSelected ? 0.7 : 1
+                      }}
+                      onClick={() => selectionMode ? toggleSelection(photo) : setSelectedPhoto(photo)}
                     >
                       {!loadedImages.has(photo) && (
                         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           <div className="spinner" />
                         </div>
                       )}
+
+                      {selectionMode && (
+                        <div style={{ position: 'absolute', top: 4, right: 4, zIndex: 10 }}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            readOnly
+                            style={{ width: 16, height: 16, cursor: 'pointer' }}
+                          />
+                        </div>
+                      )}
+
                       <img
                         src={getPhotoUrl(photo, true)}
                         alt={photo}
@@ -884,9 +981,9 @@ function PhotoGallery({ device, photos, onClose }: { device: Device; photos: str
                         }}
                       />
                     </div>
-                  ))}
-                </div>
-              </>
+                  );
+                })}
+              </div>
             )}
           </div>
         </div>
