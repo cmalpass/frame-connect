@@ -139,7 +139,14 @@ export class AdbService {
                     bytesTransferred = stats.bytesTransferred;
                 });
 
-                transfer.on('end', () => {
+                transfer.on('end', async () => {
+                    // Trigger media scan for the new file
+                    try {
+                        await this.shell(serial, `am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file://${devicePath}`);
+                    } catch (scanErr) {
+                        logger.warn({ serial, devicePath, error: scanErr }, 'Failed to trigger media scan');
+                    }
+
                     logger.info({ serial, localPath, devicePath, bytes: bytesTransferred }, 'File pushed successfully');
                     resolve({
                         success: true,

@@ -356,6 +356,21 @@ function DevicesPage() {
                 {device.connectionType === 'network' && (
                   <button className="btn btn-secondary btn-sm" onClick={() => handleConnect(device)}>🔌 Connect</button>
                 )}
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={async () => {
+                    if (confirm('Force refresh media on device? This will trigger a media scan.')) {
+                      try {
+                        await deviceApi.refresh(device.id);
+                        alert('✅ Media scan triggered');
+                      } catch (e) {
+                        alert('❌ Failed: ' + (e as Error).message);
+                      }
+                    }
+                  }}
+                >
+                  🔄 Scan
+                </button>
                 <button className="btn btn-secondary btn-sm" onClick={() => handleViewPhotos(device)}>📷 Photos</button>
                 <button className="btn btn-danger btn-sm" onClick={() => handleDelete(device.id)}>🗑️</button>
               </div>

@@ -81,6 +81,7 @@ export const deviceApi = {
     discover: () => request<{ devices: DiscoveredDevice[] }>('/devices/discover'),
     get: (id: string) => request<{ device: Device }>(`/devices/${id}`),
     getStatus: (id: string) => request<DeviceStatus>(`/devices/${id}/status`),
+    refresh: (id: string) => request<{ success: boolean; message: string }>(`/devices/${id}/refresh`, { method: 'POST' }),
     create: (data: Partial<Device>) => request<{ device: Device }>('/devices', {
         method: 'POST',
         body: JSON.stringify(data),

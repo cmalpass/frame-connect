@@ -140,6 +140,32 @@ router.post('/:id/connect', async (req: Request, res: Response) => {
     }
 });
 
+// Force refresh device media (trigger media scan)
+router.post('/:id/refresh', async (req: Request, res: Response) => {
+    try {
+        const device = deviceManager.getDevice(req.params.id);
+        if (!device) {
+            return res.status(404).json({ error: 'Device not found' });
+        }
+
+        // Trigger media scan on the device folder
+        await adbService.shell(device.serial, `am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file://${device.devicePath}`);
+
+        // Also try the content call method for good measure (newer Androids)
+        try {
+            await adbService.shell(device.serial, `content call --uri content://media/external/images/media --method scan_file --arg ${device.devicePath}`);
+        } catch (e) {
+            // Ignore if this method fails
+        }
+
+        // Provide immediate feedback that command was sent
+        res.json({ success: true, message: 'Media scan triggered' });
+    } catch (err) {
+        logger.error({ error: err }, 'Failed to refresh device media');
+        res.status(500).json({ error: 'Failed to refresh device media' });
+    }
+});
+
 import sharp from 'sharp';
 
 // Serve a specific photo from device with thumbnail support
