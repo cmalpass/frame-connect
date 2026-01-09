@@ -390,20 +390,29 @@ function DevicesPage() {
                 </button>
                 <button
                   className="btn btn-info btn-sm"
-                  title="Switch between Direct and Manual Import modes"
+                  title="Cycle between Sync Paths"
                   style={{ marginLeft: 4 }}
                   onClick={async () => {
-                    const isImportMode = device.devicePath.includes('/Download/');
-                    const newPath = isImportMode ? '/sdcard/DCIM/Frameo' : '/sdcard/Download/FrameoImports';
-                    const msg = isImportMode
-                      ? 'Switch back to Direct Mode? (Files go to /DCIM/Frameo - might not show without reboot)'
-                      : 'Switch to Manual Import Mode? (Files go to /Download/FrameoImports - easier to Import from Frameo Settings)';
+                    const current = device.devicePath;
+                    let nextPath = '/sdcard/DCIM/Frameo';
+                    let modeName = 'Direct (Frameo)';
 
-                    if (confirm(msg)) {
+                    if (current === '/sdcard/DCIM/Frameo') {
+                      nextPath = '/sdcard/DCIM';
+                      modeName = 'Direct (Root DCIM)';
+                    } else if (current === '/sdcard/DCIM') {
+                      nextPath = '/sdcard/Download/FrameoImports';
+                      modeName = 'Manual Import';
+                    } else {
+                      // Default back to Direct Frameo if in Download or unknown
+                      nextPath = '/sdcard/DCIM/Frameo';
+                      modeName = 'Direct (Frameo)';
+                    }
+
+                    if (confirm(`Switch sync path to: ${nextPath}?\n\nMode: ${modeName}`)) {
                       try {
-                        await deviceApi.update(device.id, { devicePath: newPath });
-                        alert(`✅ Switched to ${isImportMode ? 'Direct' : 'Import'} Mode.\n\nPath updated to: ${newPath}`);
-                        // Reload devices
+                        await deviceApi.update(device.id, { devicePath: nextPath });
+                        alert(`✅ Path updated to: ${nextPath}`);
                         loadDevices();
                       } catch (e) {
                         alert('❌ Failed: ' + (e as Error).message);
@@ -411,7 +420,11 @@ function DevicesPage() {
                     }
                   }}
                 >
-                  {device.devicePath.includes('/Download/') ? '📁 Direct' : '📥 Import Mode'}
+                  {device.devicePath.includes('/Download/')
+                    ? '📥 Import'
+                    : device.devicePath === '/sdcard/DCIM'
+                      ? '📁 DCIM'
+                      : '📁 Frameo'}
                 </button>
                 <button className="btn btn-secondary btn-sm" onClick={() => handleViewPhotos(device)}>📷 Photos</button>
                 <button className="btn btn-danger btn-sm" onClick={() => handleDelete(device.id)}>🗑️</button>
